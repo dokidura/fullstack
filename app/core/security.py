@@ -1,10 +1,12 @@
+# app/core/security.py
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+from passlib.context import CryptContext  # Мы оставляем passlib
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# 🔐 Меняем схему хеширования на pbkdf2_sha256 (безопасно и без багов)
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)

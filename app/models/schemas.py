@@ -34,14 +34,15 @@ class Token(BaseModel):
 class ExamFormSubmission(BaseModel):
     student_id: int
     exam_id: int
-    form_data: Dict[str, Any]
-    file_path: Optional[str] = None
+    form_data: Dict[str, Any] = {}  # ← Сделали опциональным, по умолчанию пустой словарь
+    file_path: str  # ← Теперь обязательно, так как файл обязателен
 
 class ExamFormResponse(ExamFormSubmission):
     id: int
     submission_date: datetime
     status: str
     ai_processed: bool = False
+    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
