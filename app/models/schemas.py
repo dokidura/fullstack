@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
+from typing import Dict, Any, Optional
 
 class UserRole(str, Enum):
     STUDENT = "student"
@@ -63,6 +64,7 @@ class GradebookEntry(BaseModel):
     submission_id: int
     grade: Optional[float] = None
     comments: Optional[str] = None
+    processed_data: Optional[Dict[str, Any]] = None  # ← ВАЖНО
 
 class GradebookResponse(GradebookEntry):
     id: int

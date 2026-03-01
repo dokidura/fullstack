@@ -1,62 +1,86 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi.responses import StreamingResponse
 from typing import List, Optional
-from app.models.schemas import GradebookEntry, GradebookResponse
+import csv
+import io
 
-router = APIRouter(prefix="/gradebooks", tags=["gradebooks"])
+from app.models.schemas import GradebookResponse, UserResponse
+from app.core.deps import get_current_user, require_teacher
+
+router = APIRouter()
 
 # Временное хранилище
 gradebooks_db = []
 gradebook_id_counter = 1
 
-@router.post("/", response_model=GradebookResponse)
-async def create_gradebook_entry(entry: GradebookEntry):
-    global gradebook_id_counter
-    
-    # Проверка существования submission (в реальном приложении)
-    
-    gradebook_entry = {
-        "id": gradebook_id_counter,
-        **entry.dict(),
-        "created_at": "2024-01-01T00:00:00",
-        "updated_at": "2024-01-01T00:00:00"
-    }
-    
-    gradebooks_db.append(gradebook_entry)
-    gradebook_id_counter += 1
-    
-    return gradebook_entry
 
 @router.get("/", response_model=List[GradebookResponse])
 async def get_gradebook_entries(
     exam_id: Optional[int] = None,
-    student_id: Optional[int] = None
+    student_id: Optional[int] = None,
+    current_user: UserResponse = Depends(get_current_user),
 ):
     filtered_entries = gradebooks_db
-    
-    if exam_id:
+
+    # student → только свои записи (и нельзя подставить чужой student_id)
+    if current_user.role == "student":
+        student_id = current_user.id
+
+    if exam_id is not None:
         filtered_entries = [e for e in filtered_entries if e["exam_id"] == exam_id]
-    
-    if student_id:
+
+    if student_id is not None:
         filtered_entries = [e for e in filtered_entries if e["student_id"] == student_id]
-    
+
     return filtered_entries
 
+
 @router.get("/export/{exam_id}")
-async def export_gradebook(exam_id: int):
-    """
-    Экспорт ведомости в CSV формате
-    """
+async def export_gradebook(
+    exam_id: int,
+    current_user: UserResponse = Depends(require_teacher()),
+):
+    # teacher-only
     entries = [e for e in gradebooks_db if e["exam_id"] == exam_id]
-    
+
     if not entries:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Ведомость не найдена"
+            detail="Ведомость не найдена",
         )
-    
-    # В реальном приложении генерировать CSV файл
-    return {
-        "message": f"Ведомость для экзамена {exam_id} готова к выгрузке",
-        "entries_count": len(entries),
-        "download_url": f"/api/v1/gradebooks/download/{exam_id}"
-    }
+
+    output = io.StringIO()
+    output.write("\ufeff")  # UTF-8 BOM для Excel
+    writer = csv.writer(output)
+
+    writer.writerow([
+        "Работа",
+        "Ученик",
+        "Предмет",
+        "Оценка",
+        "Правильных ответов",
+        "Всего вопросов",
+        "Комментарий",
+    ])
+
+    for e in entries:
+        processed = e.get("processed_data", {})
+        writer.writerow([
+            e.get("submission_id"),
+            e.get("student_name"),
+            e.get("exam_name"),
+            e.get("grade"),
+            processed.get("correct_answers"),
+            processed.get("total_questions"),
+            e.get("comments", ""),
+        ])
+
+    output.seek(0)
+
+    filename = f"gradebook_exam_{exam_id}.csv"
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
